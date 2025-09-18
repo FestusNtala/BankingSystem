@@ -8,5 +8,5 @@ A Java-based banking system with multiple account types.
 2. Run the application:
    ```bash
   cd BankingSystem
-javac -d . model/*.java service/*.java ui/*.java
-java bankingsystem.ui.BankingSystem
+  javac -d . model/*.java service/*.java ui/*.java
+  java bankingsystem.ui.BankingSystem
