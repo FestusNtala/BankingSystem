@@ -26,28 +26,45 @@ public class BankingSystem {
         System.out.print("Enter address: ");
         String address = scanner.nextLine();
         
+        System.out.print("Enter National ID: ");
+        String nationalId = scanner.nextLine();
+        
+        // Check if National ID already exists
+        if (bank.nationalIdExists(nationalId)) {
+            System.out.println("Error: A customer with this National ID already exists!");
+            return;
+        }
+        
         String customerId = bank.generateCustomerId();
         
-        Customer customer = new Customer(firstname, surname, address, customerId);
-        bank.addCustomer(customer);
-        currentCustomer = customer;
-        System.out.println("Customer created successfully! Welcome " + firstname + " " + surname);
-        System.out.println("Your Customer ID is: " + customerId);
+        Customer customer = new Customer(firstname, surname, address, customerId, nationalId);
+        boolean success = bank.addCustomer(customer);
+        
+        if (success) {
+            currentCustomer = customer;
+            System.out.println("Customer created successfully! Welcome " + firstname + " " + surname);
+            System.out.println("Your Customer ID is: " + customerId);
+            System.out.println("Your National ID is: " + nationalId);
+            System.out.println("Please remember your National ID for future logins.");
+        } else {
+            System.out.println("Failed to create customer. National ID might already exist.");
+        }
     }
     
     public void findExistingCustomer() {
-        System.out.println("\n--- Find Existing Customer ---");
-        System.out.print("Enter your customer ID: ");
-        String customerId = scanner.nextLine();
+        System.out.println("\n--- Customer Login ---");
+        System.out.print("Enter your National ID: ");
+        String nationalId = scanner.nextLine();
         
-        Customer customer = bank.findCustomer(customerId);
+        Customer customer = bank.findCustomerByNationalId(nationalId);
         if (customer == null) {
-            System.out.println("Customer not found!");
+            System.out.println("Customer not found! Please check your National ID or create a new account.");
             return;
         }
         
         currentCustomer = customer;
         System.out.println("Welcome back " + customer.getFirstname() + " " + customer.getSurname() + "!");
+        System.out.println("Customer ID: " + customer.getCustomerId());
     }
     
     public void openAccount() {
@@ -70,52 +87,50 @@ public class BankingSystem {
             return;
         }
         
-        if (choice == 1) {
-            System.out.print("Enter initial deposit amount: ");
-            double initialDeposit = Double.parseDouble(scanner.nextLine());
-            Account account = bank.openSavingsAccount(
-                currentCustomer.getCustomerId(), 
-                initialDeposit,
-                "Main"
-            );
-            if (account != null) {
-                System.out.println("Savings account opened successfully! Account #: " + account.getAccountNumber());
-            }
-        } else if (choice == 2) {
-            System.out.print("Enter initial deposit amount (min BWP500.00): ");
-            double initialDeposit = Double.parseDouble(scanner.nextLine());
-            Account account = bank.openInvestmentAccount(
-                currentCustomer.getCustomerId(), 
-                initialDeposit,
-                "Main"
-            );
-            if (account != null) {
-                System.out.println("Investment account opened successfully! Account #: " + account.getAccountNumber());
-            } else {
-                System.out.println("Failed to open investment account! Minimum deposit is BWP500.00");
-            }
-        } else if (choice == 3) {
-            System.out.print("Enter initial deposit amount: ");
-            double initialDeposit = Double.parseDouble(scanner.nextLine());
-            
+        AccountType accountType = null;
+        switch (choice) {
+            case 1: accountType = AccountType.SAVINGS; break;
+            case 2: accountType = AccountType.INVESTMENT; break;
+            case 3: accountType = AccountType.CHEQUE; break;
+            default:
+                System.out.println("Invalid choice!");
+                return;
+        }
+        
+        System.out.print("Enter initial deposit amount: ");
+        double initialDeposit;
+        try {
+            initialDeposit = Double.parseDouble(scanner.nextLine());
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid amount!");
+            return;
+        }
+        
+        AccountOpeningRequest.Builder requestBuilder = new AccountOpeningRequest.Builder(
+            currentCustomer.getCustomerId(), accountType, initialDeposit
+        ).branch("Main");
+        
+        // Additional information for cheque accounts
+        if (accountType == AccountType.CHEQUE) {
             System.out.print("Enter employer name: ");
             String employer = scanner.nextLine();
             
             System.out.print("Enter employer address: ");
             String employerAddress = scanner.nextLine();
             
-            Account account = bank.openChequeAccount(
-                currentCustomer.getCustomerId(), 
-                initialDeposit,
-                "Main",
-                employer,
-                employerAddress
-            );
-            if (account != null) {
-                System.out.println("Cheque account opened successfully! Account #: " + account.getAccountNumber());
-            }
+            requestBuilder.employer(employer).employerAddress(employerAddress);
+        }
+        
+        Account account = bank.openAccount(requestBuilder.build());
+        
+        if (account != null) {
+            System.out.println(accountType.getDisplayName() + " opened successfully! Account #: " + account.getAccountNumber());
         } else {
-            System.out.println("Invalid choice!");
+            System.out.println("Failed to open account! Please check the requirements.");
+            if (accountType == AccountType.INVESTMENT) {
+                System.out.println("Investment accounts require minimum deposit of BWP" + 
+                                 InvestmentAccount.getMinOpeningBalance());
+            }
         }
     }
     
@@ -135,6 +150,7 @@ public class BankingSystem {
         for (int i = 0; i < accounts.size(); i++) {
             System.out.println((i + 1) + ". " + accounts.get(i));
         }
+        System.out.printf("Total Balance: BWP%.2f\n", currentCustomer.getTotalBalance());
     }
     
     public void makeDeposit() {
@@ -154,16 +170,35 @@ public class BankingSystem {
             System.out.println((i + 1) + ". " + accounts.get(i));
         }
         
-        int choice = Integer.parseInt(scanner.nextLine());
+        System.out.print("Select account (1-" + accounts.size() + "): ");
+        int choice;
+        try {
+            choice = Integer.parseInt(scanner.nextLine());
+            if (choice < 1 || choice > accounts.size()) {
+                System.out.println("Invalid choice!");
+                return;
+            }
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid choice!");
+            return;
+        }
+        
         Account account = accounts.get(choice - 1);
         
         System.out.print("Enter deposit amount: ");
-        double amount = Double.parseDouble(scanner.nextLine());
+        double amount;
+        try {
+            amount = Double.parseDouble(scanner.nextLine());
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid amount!");
+            return;
+        }
         
         if (account.deposit(amount)) {
             System.out.println("Deposit successful! New balance: BWP" + String.format("%.2f", account.getBalance()));
+            bank.saveData(); // Save after transaction
         } else {
-            System.out.println("Deposit failed!");
+            System.out.println("Deposit failed! Please check the amount.");
         }
     }
     
@@ -184,17 +219,42 @@ public class BankingSystem {
             System.out.println((i + 1) + ". " + accounts.get(i));
         }
 
-        int choice = Integer.parseInt(scanner.nextLine());
+        System.out.print("Select account (1-" + accounts.size() + "): ");
+        int choice;
+        try {
+            choice = Integer.parseInt(scanner.nextLine());
+            if (choice < 1 || choice > accounts.size()) {
+                System.out.println("Invalid choice!");
+                return;
+            }
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid choice!");
+            return;
+        }
+
         Account account = accounts.get(choice - 1);
 
         System.out.print("Enter withdrawal amount: ");
-        double amount = Double.parseDouble(scanner.nextLine());
+        double amount;
+        try {
+            amount = Double.parseDouble(scanner.nextLine());
+        } catch (NumberFormatException e) {
+            System.out.println("Invalid amount!");
+            return;
+        }
 
         if (account.withdraw(amount)) {
             System.out.println("Withdrawal successful! New balance: BWP" 
                                + String.format("%.2f", account.getBalance()));
+            bank.saveData(); // Save after transaction
         } else {
             System.out.println("Withdrawal failed! Check amount and account type.");
+            if (account instanceof InvestmentAccount) {
+                System.out.println("Investment accounts have a 2% withdrawal penalty.");
+            } else if (account instanceof SavingsAccount) {
+                System.out.println("Savings accounts require minimum balance of BWP" + 
+                                 SavingsAccount.getMinimumBalance());
+            }
         }
     }
     
@@ -209,7 +269,13 @@ public class BankingSystem {
             System.out.println("6. Logout");
 
             System.out.print("Enter choice (1-6): ");
-            int choice = Integer.parseInt(scanner.nextLine());
+            int choice;
+            try {
+                choice = Integer.parseInt(scanner.nextLine());
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid choice!");
+                continue;
+            }
 
             switch (choice) {
                 case 1: openAccount(); break;
@@ -236,16 +302,24 @@ public class BankingSystem {
         while (true) {
             System.out.println("\n=== Main Menu ===");
             System.out.println("Press 1 to Create a New Customer");
-            System.out.println("Press 2 if you Already Have a Customer Account");
+            System.out.println("Press 2 to Login with National ID");
             System.out.println("Press 3 to Exit");
 
             System.out.print("Enter choice (1-3): ");
-            int choice = Integer.parseInt(scanner.nextLine());
+            int choice;
+            try {
+                choice = Integer.parseInt(scanner.nextLine());
+            } catch (NumberFormatException e) {
+                System.out.println("Invalid choice! Please enter a number.");
+                continue;
+            }
 
             switch (choice) {
                 case 1:
                     createCustomer();
-                    customerMenu();
+                    if (currentCustomer != null) {
+                        customerMenu();
+                    }
                     break;
                 case 2:
                     findExistingCustomer();
